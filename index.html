@@ -223,6 +223,31 @@
     color: var(--ink-dim);
   }
 
+  /* Co-anchor's reaction, shown as a caption so the dialogue reads
+     even when voices aren't playing (TTS support/permissions vary). */
+  .lt-reaction{
+    margin-top: clamp(6px, 0.9vw, 12px);
+    padding-top: clamp(6px, 0.9vw, 12px);
+    border-top: 2px solid #ffffff22;
+    font-family: var(--f-body);
+    font-size: clamp(14px, 1.7vw, 22px);
+    color: var(--teal);
+    max-width: 90%;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity .25s ease, transform .25s ease;
+  }
+  .lt-reaction.show{ opacity:1; transform:translateY(0); }
+  .lt-reaction-tag{
+    font-family: var(--f-display);
+    font-size: 0.5em;
+    color: var(--bg);
+    background: var(--teal);
+    padding: 3px 6px;
+    margin-right: 7px;
+    vertical-align: middle;
+  }
+
   /* ---------- ticker ---------- */
   .ticker{
     display:flex;
@@ -340,6 +365,10 @@
       <div class="lt-kicker" id="ltKicker">BREAKING</div>
       <div class="lt-headline" id="ltHeadline">Loading headline&hellip;</div>
       <div class="lt-sub" id="ltSub"></div>
+      <div class="lt-reaction" id="ltReaction">
+        <span class="lt-reaction-tag">CO-ANCHOR</span>
+        <span id="ltReactionText"></span>
+      </div>
     </div>
   </div>
 
@@ -831,33 +860,55 @@
   }
 
   function speak(text, voice, pitch, rate, onDone){
-    if (!synthAvailable || !audioOn){ onDone(); return; }
+    if (!synthAvailable || !audioOn || ttsBroken){ onDone(); return; }
     try{
       var u = new SpeechSynthesisUtterance(text);
       if (voice) u.voice = voice;
       u.pitch = pitch; u.rate = rate;
-      var done = false;
+      var done = false, started = false;
       function finish(){ if (done) return; done = true; onDone(); }
+      u.onstart = function(){ started = true; ttsStrikes = 0; };
       u.onend = finish;
       u.onerror = finish;
+      // Some sandboxed/cross-origin contexts block speech-synthesis
+      // permission silently: the call succeeds but 'onstart' never
+      // fires and nothing is ever heard. If that happens a couple of
+      // times in a row, stop trying and fall back to captions-only
+      // so playback doesn't keep silently stalling on dead air.
+      setTimeout(function(){
+        if (!started){
+          ttsStrikes++;
+          if (ttsStrikes >= 2){
+            ttsBroken = true;
+            updateSoundLabel();
+          }
+        }
+      }, 900);
       // safety timeout in case the engine never fires an end event
       setTimeout(finish, Math.max(4000, text.length * 90));
+      if (synth.paused) synth.resume();
       synth.speak(u);
     }catch(e){ onDone(); }
   }
 
   var voiceA = pickVoice(false);
   var voiceB = pickVoice(true);
+  var ttsBroken = false;   // flips true after repeated silent failures
+  var ttsStrikes = 0;
 
   /* ===================== PLAYBACK ===================== */
   var idx = 0;
-  var segLen = 7000; // ms per headline, used only when audio is off
+  var segLen = 7000; // ms per headline, used when audio/voices are off
+  var reactionDelay = 3200; // ms before the reaction caption reveals, caption-timer mode
   var pendingTimer = null;
+  var reactionTimer = null;
   var dotsEl = document.getElementById("dots");
   var segLabelEl = document.getElementById("segLabel");
   var ltKicker = document.getElementById("ltKicker");
   var ltHeadline = document.getElementById("ltHeadline");
   var ltSub = document.getElementById("ltSub");
+  var ltReaction = document.getElementById("ltReaction");
+  var ltReactionText = document.getElementById("ltReactionText");
   var soundBtn = document.getElementById("soundBtn");
   var startOverlay = document.getElementById("startOverlay");
 
@@ -879,12 +930,27 @@
     }
   }
 
+  function updateSoundLabel(){
+    if (!audioOn){
+      soundBtn.textContent = "🔇 SOUND";
+    } else if (ttsBroken || !synthAvailable){
+      soundBtn.textContent = "📝 CAPTIONS";
+    } else {
+      soundBtn.textContent = "🔊 SOUND";
+    }
+  }
+
+  // Reaction caption is always shown as text, whether or not the
+  // spoken audio actually plays — that's the real "commentary", audio
+  // is an enhancement on top of it.
   function showHeadline(i){
     idx = ((i % HEADLINES.length) + HEADLINES.length) % HEADLINES.length;
     var h = HEADLINES[idx];
     ltKicker.textContent = h.kicker;
     ltHeadline.textContent = h.headline;
     ltSub.textContent = h.sub;
+    ltReactionText.textContent = h.reaction;
+    ltReaction.classList.remove("show");
     segLabelEl.textContent = SEG_NAMES[h.scene];
     currentScene = h.scene;
     updateDots();
@@ -893,20 +959,23 @@
 
   function stopPlayback(){
     clearTimeout(pendingTimer);
+    clearTimeout(reactionTimer);
     SPEAK.a = false; SPEAK.b = false;
     if (synth) synth.cancel();
   }
 
-  // Drives one headline: either real two-voice dialogue, or a fixed
-  // caption timer when sound is off / unsupported.
+  // Drives one headline: real two-voice dialogue when speech actually
+  // works, otherwise a fixed caption timer — either way the reaction
+  // caption reveals partway through and both lines stay readable.
   function playCurrent(){
     var h = showHeadline(idx);
     sting();
-    if (audioOn && synthAvailable){
+    if (audioOn && synthAvailable && !ttsBroken){
       SPEAK.a = true;
       speak(h.line1, voiceA, 0.95, 1.0, function(){
         SPEAK.a = false;
         blip();
+        ltReaction.classList.add("show");
         SPEAK.b = true;
         speak(h.reaction, voiceB, 1.25, 1.05, function(){
           SPEAK.b = false;
@@ -914,6 +983,10 @@
         });
       });
     } else {
+      reactionTimer = setTimeout(function(){
+        blip();
+        ltReaction.classList.add("show");
+      }, reactionDelay);
       pendingTimer = setTimeout(advance, segLen);
     }
   }
@@ -932,8 +1005,8 @@
   function setAudioOn(on){
     audioOn = on;
     soundBtn.setAttribute("aria-pressed", on ? "true" : "false");
-    soundBtn.textContent = on ? "🔊 SOUND" : "🔇 SOUND";
-    if (!on){ stopPlayback(); pendingTimer = setTimeout(advance, segLen); }
+    updateSoundLabel();
+    if (!on){ stopPlayback(); playCurrent(); }
   }
 
   soundBtn.addEventListener("click", function(){
@@ -969,6 +1042,7 @@
 
   var currentScene = HEADLINES[0].scene;
   showHeadline(0);
+  reactionTimer = setTimeout(function(){ ltReaction.classList.add("show"); }, reactionDelay);
   pendingTimer = setTimeout(advance, segLen);
 
   /* ===================== RENDER LOOP ===================== */
