@@ -1,0 +1,904 @@
+<title>Park Pulse Newsroom</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* ============================================================
+     DESIGN PLAN
+     Layout: fixed-height "broadcast frame" (16:9-ish, scales to
+     viewport). Three cross-fading pixel-art scenes drawn on a
+     <canvas> grid (anchor desk / field report / data board),
+     framed by a persistent top brand bar + bottom ticker + side
+     "ON AIR" clock rail, like a real cable-news chrome.
+     ============================================================ */
+  :root{
+    /* -- color: dusk theme-park studio -- */
+    --bg:         #0c1024;
+    --panel:      #141a35;
+    --panel-2:    #1c2348;
+    --ink:        #eef1ff;
+    --ink-dim:    #9aa3d6;
+    --gold:       #ffc659;
+    --gold-dim:   #8a6e2f;
+    --red:        #ff4d5e;
+    --teal:       #4de3c9;
+    --grid-line:  #2a3266;
+    --shadow-px:  #060714;
+
+    /* -- type -- */
+    --f-display: "Press Start 2P", "Courier New", monospace;
+    --f-body:    "VT323", "Courier New", monospace;
+    --f-data:    "Space Mono", "Courier New", monospace;
+
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  html, body{ height:100%; }
+  body{
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--f-body);
+    display:flex;
+    flex-direction:column;
+    margin:0;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    overflow:hidden;
+  }
+
+  .tv{
+    flex:1 1 auto;
+    min-height:0;
+    width: 100%;
+    display:flex;
+    flex-direction:column;
+    background: var(--panel);
+    image-rendering: pixelated;
+  }
+
+  /* ---------- brand bar ---------- */
+  .brandbar{
+    display:flex;
+    align-items:center;
+    gap: clamp(8px, 1.4vw, 20px);
+    padding: clamp(8px, 1.2vw, 18px) clamp(12px, 2vw, 26px);
+    background: var(--panel-2);
+    border-bottom: 3px solid var(--shadow-px);
+  }
+  .logo{
+    font-family: var(--f-display);
+    font-size: clamp(11px, 1.5vw, 20px);
+    color: var(--bg);
+    background: var(--gold);
+    padding: clamp(6px, 0.7vw, 11px) clamp(8px, 1vw, 14px);
+    line-height:1;
+    box-shadow: 3px 3px 0 var(--shadow-px);
+    white-space:nowrap;
+  }
+  .logo small{ display:block; font-size:.55em; margin-top: 0.5em; letter-spacing:1px; color:#5c4a1a; }
+  .onair{
+    font-family: var(--f-display);
+    font-size: clamp(9px, 1.1vw, 15px);
+    color: var(--ink);
+    background: var(--red);
+    padding: clamp(6px, 0.7vw, 11px) clamp(7px, 0.9vw, 13px);
+    box-shadow: 3px 3px 0 var(--shadow-px);
+    animation: blink 1.6s steps(1) infinite;
+    white-space:nowrap;
+  }
+  @keyframes blink{ 0%,49%{opacity:1} 50%,100%{opacity:.35} }
+  .brandbar .spacer{flex:1}
+  .clock{
+    font-family: var(--f-data);
+    font-weight:700;
+    font-size: clamp(14px, 1.9vw, 26px);
+    color: var(--teal);
+    text-align:right;
+    line-height:1.15;
+  }
+  .clock .date{ display:block; font-size: 0.6em; color: var(--ink-dim); font-weight:400; }
+
+  .sound-btn{
+    font-family: var(--f-display);
+    font-size: clamp(8px, 1vw, 13px);
+    color: var(--ink);
+    background: var(--panel);
+    border: 2px solid var(--grid-line);
+    padding: clamp(6px, 0.8vw, 11px) clamp(8px, 1vw, 14px);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .sound-btn[aria-pressed="true"]{
+    color: var(--bg);
+    background: var(--teal);
+    border-color: var(--shadow-px);
+  }
+  .sound-btn:focus-visible{ outline: 2px solid var(--teal); outline-offset:2px; }
+
+  /* ---------- stage ---------- */
+  .stage-wrap{
+    position:relative;
+    width:100%;
+    flex:1 1 auto;
+    min-height:0;
+    background:#000;
+  }
+  .stage-wrap canvas{
+    position:absolute; inset:0;
+    width:100%; height:100%;
+    display:block;
+    image-rendering: pixelated;
+  }
+
+  .start-overlay{
+    position:absolute;
+    inset:0;
+    z-index:5;
+    width:100%; height:100%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap: 10px;
+    background: #060714cc;
+    color: var(--ink);
+    border:0;
+    cursor:pointer;
+    font-family: var(--f-display);
+    font-size: clamp(13px, 1.8vw, 22px);
+    text-align:center;
+    padding: 20px;
+  }
+  .start-overlay-icon{
+    font-size: clamp(28px, 4vw, 48px);
+    color: var(--gold);
+  }
+  .start-overlay small{
+    font-family: var(--f-data);
+    font-size: clamp(10px, 1.1vw, 15px);
+    color: var(--ink-dim);
+    text-transform:none;
+    letter-spacing:0;
+  }
+  .start-overlay:focus-visible{ outline: 3px solid var(--teal); outline-offset:-6px; }
+  .start-overlay.hidden{ display:none; }
+
+  .segment-label{
+    position:absolute;
+    top: clamp(8px, 1.2vw, 18px); left: clamp(8px, 1.2vw, 18px);
+    font-family: var(--f-display);
+    font-size: clamp(8px, 1vw, 13px);
+    color: var(--bg);
+    background: var(--teal);
+    padding: clamp(4px, 0.6vw, 9px) clamp(6px, 0.8vw, 12px);
+    box-shadow: 2px 2px 0 var(--shadow-px);
+    z-index:3;
+  }
+
+  /* lower third */
+  .lower-third{
+    position:absolute;
+    left:0; right:0; bottom:0;
+    z-index:3;
+    padding: clamp(10px, 1.8vw, 28px) clamp(14px, 2.4vw, 36px) clamp(12px, 2vw, 30px);
+    background: linear-gradient(0deg, #060714ee 55%, #06071400);
+  }
+  .lt-kicker{
+    display:inline-block;
+    font-family: var(--f-display);
+    font-size: clamp(8px, 1vw, 13px);
+    color:#1a0c0c;
+    background: var(--red);
+    padding: clamp(4px, 0.6vw, 8px) clamp(6px, 0.8vw, 11px);
+    margin-bottom: clamp(5px, 0.8vw, 10px);
+    box-shadow: 2px 2px 0 var(--shadow-px);
+  }
+  .lt-headline{
+    font-family: var(--f-body);
+    font-size: clamp(18px, 2.6vw, 42px);
+    line-height:1.15;
+    color: var(--ink);
+    text-shadow: 2px 2px 0 var(--shadow-px);
+    max-width: 90%;
+  }
+  .lt-sub{
+    margin-top: clamp(3px, 0.5vw, 8px);
+    font-family: var(--f-data);
+    font-size: clamp(11px, 1.2vw, 17px);
+    color: var(--ink-dim);
+  }
+
+  /* ---------- ticker ---------- */
+  .ticker{
+    display:flex;
+    align-items:stretch;
+    background: #000;
+    border-top: 3px solid var(--shadow-px);
+    overflow:hidden;
+  }
+  .ticker-tag{
+    flex: 0 0 auto;
+    font-family: var(--f-display);
+    font-size: clamp(8px, 1vw, 13px);
+    color: var(--bg);
+    background: var(--gold);
+    display:flex;
+    align-items:center;
+    padding: 0 clamp(8px, 1.2vw, 16px);
+    white-space:nowrap;
+  }
+  .ticker-track-wrap{
+    flex:1 1 auto;
+    min-width:0;
+    overflow:hidden;
+    position:relative;
+    display:flex;
+    align-items:center;
+  }
+  .ticker-track{
+    display:flex;
+    gap: clamp(28px, 3vw, 56px);
+    white-space:nowrap;
+    font-family: var(--f-data);
+    font-size: clamp(13px, 1.4vw, 20px);
+    color: var(--teal);
+    padding-left:100%;
+    padding-block: clamp(6px, 1vw, 12px);
+    animation: scroll-left 85s linear infinite;
+  }
+  .ticker-track span.open{ color: var(--teal); }
+  .ticker-track span.closed{ color: var(--red); }
+  .ticker-track span.wait-num{ color: var(--gold); font-weight:700; }
+  @keyframes scroll-left{
+    from{ transform: translateX(0); }
+    to{ transform: translateX(-100%); }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .ticker-track{ animation: none; padding-left: 0; }
+    .onair{ animation: none; }
+  }
+
+  /* ---------- scene dots ---------- */
+  .dots{
+    display:flex;
+    gap:6px;
+    justify-content:center;
+    padding: clamp(7px, 1vw, 14px);
+    background: var(--panel-2);
+  }
+  .dot{
+    width: clamp(9px, 1vw, 15px); height: clamp(9px, 1vw, 15px);
+    background: var(--grid-line);
+    border: 2px solid var(--shadow-px);
+    cursor:pointer;
+    padding:0;
+  }
+  .dot[aria-current="true"]{ background: var(--gold); }
+  .dot:focus-visible{ outline: 2px solid var(--teal); outline-offset:2px; }
+
+  footer.note{
+    flex: 0 0 auto;
+    text-align:center;
+    font-family: var(--f-data);
+    font-size: clamp(9px, 0.85vw, 13px);
+    color: var(--ink-dim);
+    line-height:1.4;
+    padding: clamp(4px, 0.6vw, 8px) 10px;
+    background: var(--panel-2);
+  }
+  footer.note a{ color: var(--teal); }
+</style>
+
+<div class="tv">
+  <div class="brandbar">
+    <div class="logo">PARK PULSE<small>WDW EDITION</small></div>
+    <div class="onair">● ON AIR</div>
+    <div class="spacer"></div>
+    <button class="sound-btn" id="soundBtn" aria-pressed="false">🔇 SOUND</button>
+    <div class="clock">
+      <span id="clockTime">--:--</span>
+      <span class="date" id="clockDate">loading</span>
+    </div>
+  </div>
+
+  <div class="stage-wrap" id="stageWrap">
+    <canvas id="scene" width="480" height="300"></canvas>
+    <div class="segment-label" id="segLabel">DESK</div>
+    <button class="start-overlay" id="startOverlay">
+      <span class="start-overlay-icon">▶</span>
+      <span>START BROADCAST</span>
+      <small>tap for anchors with voices &amp; sound</small>
+    </button>
+    <div class="lower-third">
+      <div class="lt-kicker" id="ltKicker">BREAKING</div>
+      <div class="lt-headline" id="ltHeadline">Loading headline&hellip;</div>
+      <div class="lt-sub" id="ltSub"></div>
+    </div>
+  </div>
+
+  <div class="dots" id="dots"></div>
+
+  <div class="ticker">
+    <div class="ticker-tag">WAIT&nbsp;TIMES</div>
+    <div class="ticker-track-wrap">
+      <div class="ticker-track" id="tickerTrack"></div>
+    </div>
+  </div>
+</div>
+
+<footer class="note">
+  Headlines &amp; wait times are a real snapshot captured when this broadcast was built &mdash; not a live feed (artifacts can't poll outside sites continuously). Anchor voices use your browser's built-in text-to-speech, so quality varies by browser. Ask for a fresh edition any time.
+</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ===================== CONTENT ===================== */
+  var NOW_CAPTURED = "Oct 2, 2026 &middot; 4:10 PM ET";
+
+  var HEADLINES = [
+    {
+      kicker: "55TH ANNIVERSARY",
+      headline: "Walt Disney World marks 55 years with its biggest development slate yet",
+      sub: "President Joe Schott spoke at Cinderella Castle as the resort kicks off its anniversary celebration.",
+      scene: "desk",
+      line1: "Walt Disney World marks fifty five years today, with more construction underway than ever before.",
+      reaction: "Fifty five years and they're still building. No signs of slowing down out there."
+    },
+    {
+      kicker: "NEW RESORT",
+      headline: "Construction updates roll in on Lakeshore Lodge, Disney World's newest resort",
+      sub: "Disney Parks Blog shares fresh looks at the property taking shape near the Magic Kingdom.",
+      scene: "weather",
+      line1: "Disney Parks Blog has fresh construction updates on Lakeshore Lodge, the resort's newest property.",
+      reaction: "Another one for the map. Guests are going to love watching this one go up."
+    },
+    {
+      kicker: "REFURBISHMENTS",
+      headline: "Several attractions head into scheduled refurbishment this month",
+      sub: "Guests should expect rotating closures across all four parks through October.",
+      scene: "field",
+      line1: "Several attractions are heading into scheduled refurbishment this month, with rotating closures across all four parks.",
+      reaction: "Good excuse to check the wait times before you head out. More on that right after this."
+    },
+    {
+      kicker: "GETTING THERE",
+      headline: "New Gate Link trams now running at Orlando International Airport",
+      sub: "The first of four new trams began service, aimed at shortening the walk between gates.",
+      scene: "desk",
+      line1: "The first of four new Gate Link trams is now running at Orlando International, aimed at shortening that walk between gates.",
+      reaction: "Anything that gets guests to the parks faster is a win in my book."
+    }
+  ];
+
+  // Live snapshot pulled from queue-times.com for Magic Kingdom.
+  var WAITS = [
+    ["Seven Dwarfs Mine Train", 35, true],
+    ["TRON Lightcycle / Run", 35, true],
+    ["Buzz Lightyear's Space Ranger Spin", 35, true],
+    ["Peter Pan's Flight", 35, true],
+    ["Big Thunder Mountain Railroad", 20, true],
+    ["The Many Adventures of Winnie the Pooh", 20, true],
+    ["Jungle Cruise", 15, true],
+    ["Tiana's Bayou Adventure", 15, true],
+    ["Hall of Presidents", 15, true],
+    ["Space Mountain", 10, true],
+    ["Astro Orbiter", 10, true],
+    ["Haunted Mansion", 0, false],
+    ["Walt Disney World Railroad", 0, false]
+  ];
+
+  var WEATHER = {
+    temp: 75, realfeel: 81, hi: 88, lo: 76,
+    sky: "Mostly cloudy, heavy thunderstorm likely late morning"
+  };
+
+  /* ===================== CLOCK ===================== */
+  function pad(n){ return n < 10 ? "0" + n : "" + n; }
+  function tickClock(){
+    var d = new Date();
+    var h = d.getHours(), m = d.getMinutes(), s = d.getSeconds();
+    var ampm = h >= 12 ? "PM" : "AM";
+    var h12 = h % 12; if (h12 === 0) h12 = 12;
+    document.getElementById("clockTime").textContent = h12 + ":" + pad(m) + ":" + pad(s) + " " + ampm;
+    document.getElementById("clockDate").textContent = d.toLocaleDateString(undefined, {month:"short", day:"numeric", year:"numeric"});
+  }
+  tickClock();
+  setInterval(tickClock, 1000);
+
+  /* ===================== TICKER ===================== */
+  var trackEl = document.getElementById("tickerTrack");
+  function buildTicker(){
+    var html = "";
+    for (var i=0;i<WAITS.length;i++){
+      var r = WAITS[i];
+      if (r[2]) {
+        html += '<span>' + r[0] + ' <span class="wait-num">' + r[1] + ' min</span></span>';
+      } else {
+        html += '<span>' + r[0] + ' <span class="closed">CLOSED</span></span>';
+      }
+    }
+    html += '<span>WDW WEATHER &middot; <span class="open">' + WEATHER.temp + '&deg;F</span>, ' + WEATHER.sky + ' &middot; high ' + WEATHER.hi + '&deg;</span>';
+    html += '<span>SNAPSHOT CAPTURED ' + NOW_CAPTURED + '</span>';
+    // duplicate once for seamless loop
+    trackEl.innerHTML = html + html;
+  }
+  buildTicker();
+
+  /* ===================== PIXEL SCENE ENGINE ===================== */
+  var canvas = document.getElementById("scene");
+  var ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  var W = canvas.width, H = canvas.height;
+
+  function rect(x,y,w,h,c){ ctx.fillStyle = c; ctx.fillRect(x,y,w,h); }
+
+  // palette
+  var P = {
+    skyTop: "#241b4d", skyBot: "#4a3a8c",
+    skyTopDay: "#5fb3e6", skyBotDay: "#bfe8ff",
+    floor: "#121735", floorLine: "#1c2348",
+    desk: "#7a4a2b", deskDark: "#5c3620", deskTop: "#9a6a3e",
+    skin: "#e8b48a", skinSh: "#c98f62",
+    suitNavy: "#23305c", suitNavyDark: "#17213f",
+    suitTeal: "#1f5c56", suitTealDark: "#163f3b",
+    hair: "#2b1d12", hairRed: "#7a2c1d",
+    gold: "#ffc659", red: "#ff4d5e", white: "#eef1ff",
+    castleStone: "#cfd3e6", castleStoneSh: "#9aa0c2", castleRoof: "#3a5fc9", castleRoofSh: "#2a469b",
+    grass: "#2a7a4a", grassSh: "#1f5c38",
+    mic: "#15182c"
+  };
+
+  function drawSky(night){
+    var g = ctx.createLinearGradient(0,0,0,H*0.62);
+    if (night){ g.addColorStop(0,P.skyTop); g.addColorStop(1,P.skyBot); }
+    else { g.addColorStop(0,P.skyTopDay); g.addColorStop(1,P.skyBotDay); }
+    ctx.fillStyle = g; ctx.fillRect(0,0,W,H*0.62);
+    if (night){
+      // stars
+      var rnd = mulberry32(7);
+      for (var i=0;i<40;i++){
+        var x = Math.floor(rnd()*W), y = Math.floor(rnd()*H*0.4);
+        rect(x,y,2,2, i%5===0 ? P.gold : "#ffffffaa");
+      }
+    }
+  }
+
+  function mulberry32(seed){
+    return function(){
+      seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+      var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  // tiny original castle silhouette (generic fantasy castle, not a trademarked design)
+  function drawCastle(cx, baseY, scale, lit){
+    ctx.save();
+    ctx.translate(cx, baseY);
+    ctx.scale(scale, scale);
+    var stone = lit ? P.castleStone : "#5a5f86";
+    var stoneSh = lit ? P.castleStoneSh : "#3e4268";
+    var roof = lit ? P.castleRoof : "#243a78";
+    // base block
+    rect(-34,-40,68,40, stone);
+    rect(-34,-40,68,8, stoneSh);
+    // towers
+    var towers = [[-34,10],[-16,18],[6,18],[22,10],[-8,0]];
+    for (var i=0;i<towers.length;i++){
+      var tx = towers[i][0], th = towers[i][1];
+      rect(tx,-40-th,10,th+40, stone);
+      // conical roof
+      ctx.fillStyle = roof;
+      ctx.beginPath();
+      ctx.moveTo(tx-2,-40-th);
+      ctx.lineTo(tx+5,-40-th-16);
+      ctx.lineTo(tx+12,-40-th);
+      ctx.closePath();
+      ctx.fill();
+      rect(tx+3,-40-th-20,2,6, P.gold);
+    }
+    // windows
+    for (var w=0; w<5; w++){
+      rect(-28+w*14,-28,4,7, lit ? "#2a2f52" : "#f6d98a");
+    }
+    ctx.restore();
+  }
+
+  function drawRide(cx, baseY, scale, type){
+    ctx.save();
+    ctx.translate(cx, baseY);
+    ctx.scale(scale, scale);
+    if (type === "wheel"){
+      ctx.strokeStyle = P.white; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0,-40,34,0,Math.PI*2); ctx.stroke();
+      ctx.strokeStyle = P.gold; ctx.lineWidth = 2;
+      for (var a=0;a<8;a++){
+        var ang = a/8*Math.PI*2;
+        ctx.beginPath();
+        ctx.moveTo(0,-40); ctx.lineTo(Math.cos(ang)*34, -40+Math.sin(ang)*34);
+        ctx.stroke();
+        rect(Math.cos(ang)*34-4, -40+Math.sin(ang)*34-3, 8,6, P.red);
+      }
+      rect(-4,-10,8,10, P.suitNavyDark);
+    } else {
+      // coaster hill (generic)
+      ctx.strokeStyle = P.gold; ctx.lineWidth = 3; ctx.beginPath();
+      ctx.moveTo(-60,0); ctx.lineTo(-10,-70); ctx.lineTo(20,-30); ctx.lineTo(60,-50);
+      ctx.stroke();
+      ctx.strokeStyle = P.red; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.moveTo(-60,4); ctx.lineTo(-10,-66); ctx.lineTo(20,-26); ctx.lineTo(60,-46);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawFlag(x,y,scale,wave){
+    ctx.save();
+    ctx.translate(x,y); ctx.scale(scale,scale);
+    rect(0,-30,2,30, "#bbb");
+    ctx.fillStyle = P.red;
+    ctx.beginPath();
+    ctx.moveTo(2,-30);
+    ctx.lineTo(16+ (wave?2:0), -27);
+    ctx.lineTo(2,-22);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  // ---- figure: simple pixel "person", built from rects so it reads
+  // as an original blocky character, never a specific trademarked one.
+  function drawAnchor(cx, baseY, suitColor, suitDark, hairColor, talk, blink){
+    ctx.save();
+    ctx.translate(cx, baseY);
+    // shadow
+    ctx.fillStyle = "#00000055";
+    ctx.beginPath(); ctx.ellipse(0, 2, 26, 6, 0, 0, Math.PI*2); ctx.fill();
+    // body / suit
+    rect(-22,-54,44,54, suitColor);
+    rect(-22,-54,44,6, suitDark);
+    rect(-6,-54,12,16, P.white); // shirt
+    rect(-3,-54,6,16, suitDark); // tie
+    // arms
+    rect(-28,-48,8,34, suitDark);
+    rect(20,-48,8,34, suitDark);
+    // head
+    rect(-14,-86,28,34, P.skin);
+    rect(-14,-86,28,6, P.skinSh);
+    // hair
+    rect(-15,-90,30,8, hairColor);
+    rect(-15,-86,6,10, hairColor);
+    rect(9,-86,6,10, hairColor);
+    // eyes
+    if (blink){
+      rect(-9,-72,6,2, "#2b1d12");
+      rect(3,-72,6,2, "#2b1d12");
+    } else {
+      rect(-9,-75,6,5, P.white);
+      rect(3,-75,6,5, P.white);
+      rect(-8,-73,3,3, "#1a1430");
+      rect(4,-73,3,3, "#1a1430");
+    }
+    // mouth: talk-cycle
+    if (talk){
+      rect(-6,-58,12,6, "#5a1620");
+    } else {
+      rect(-6,-56,12,2, "#5a1620");
+    }
+    ctx.restore();
+  }
+
+  function drawDeskChrome(){
+    // floor
+    rect(0, H*0.62, W, H*0.38, P.floor);
+    for (var i=0;i<6;i++){
+      rect(0, H*0.62 + i*9 + (i*i*0.4), W, 1, P.floorLine);
+    }
+    // anchor desk
+    rect(0, H*0.72, W, H*0.28, P.deskDark);
+    rect(0, H*0.72, W, 8, P.deskTop);
+    for (var s=0; s<W; s+=16){
+      rect(s, H*0.72+8, 8, 3, P.desk);
+    }
+    // desk plate
+    ctx.fillStyle = P.gold;
+    ctx.font = "8px monospace";
+  }
+
+  function drawMic(x,y,scale){
+    ctx.save(); ctx.translate(x,y); ctx.scale(scale,scale);
+    rect(-2,-22,4,22, "#888");
+    rect(-6,-30,12,10, P.mic);
+    rect(-6,-30,12,3, "#333");
+    ctx.restore();
+  }
+
+  /* ---- scene renderers ---- */
+  function renderDesk(t){
+    drawSky(true);
+    // distant castle through "window"
+    drawCastle(W*0.78, H*0.60, 0.9, true);
+    drawDeskChrome();
+    var blink = (Math.floor(t/2.6) % 7 === 0);
+    var talkA = SPEAK.a && (Math.floor(t*6) % 2 === 0);
+    var talkB = SPEAK.b && (Math.floor(t*6) % 2 === 0);
+    drawAnchor(W*0.33, H*0.86, P.suitNavy, P.suitNavyDark, P.hair, talkA, blink && !SPEAK.a);
+    drawAnchor(W*0.63, H*0.88, P.suitTeal, P.suitTealDark, P.hairRed, talkB, blink && !SPEAK.b);
+    drawMic(W*0.33-20, H*0.80, 1);
+    drawMic(W*0.63+18, H*0.82, 1);
+  }
+
+  function renderField(t){
+    drawSky(false);
+    // ground
+    rect(0, H*0.62, W, H*0.38, P.grass);
+    for (var i=0;i<10;i++){
+      rect((i*37 + (t*8)%37), H*0.62, 18, H*0.38, i%2? P.grass : P.grassSh);
+    }
+    drawRide(W*0.22, H*0.62, 1.0, "wheel");
+    drawRide(W*0.72, H*0.62, 0.9, "coaster");
+    drawFlag(W*0.5, H*0.60, 0.8, Math.floor(t*4)%2===0);
+    var blink = (Math.floor(t/2.4)%6===0);
+    var talking = (SPEAK.a || SPEAK.b) && (Math.floor(t*6)%2===0);
+    drawAnchor(W*0.5, H*0.95, P.suitTeal, P.suitTealDark, P.hair, talking, blink && !(SPEAK.a||SPEAK.b));
+    drawMic(W*0.5-18, H*0.90, 0.9);
+    // crowd dots
+    var rnd = mulberry32(42);
+    for (var c=0;c<14;c++){
+      var cx = rnd()*W, cy = H*0.70 + rnd()*H*0.22;
+      rect(cx, cy, 5, 9, ["#444","#555","#333","#663","#336"][c%5]);
+    }
+  }
+
+  function renderWeather(t){
+    drawSky(true);
+    drawDeskChrome();
+    // data board panel
+    rect(W*0.08, H*0.10, W*0.84, H*0.46, "#0a0e22");
+    rect(W*0.08, H*0.10, W*0.84, 10, P.gold);
+    ctx.fillStyle = P.white;
+    ctx.font = "10px monospace";
+    ctx.textBaseline = "top";
+    ctx.fillText("WDW WEATHER", W*0.12, H*0.14);
+    ctx.font = "22px monospace";
+    ctx.fillStyle = P.gold;
+    ctx.fillText(WEATHER.temp + "°F", W*0.12, H*0.21);
+    ctx.font = "9px monospace";
+    ctx.fillStyle = P.ink_dim || "#9aa3d6";
+    ctx.fillText("feels like " + WEATHER.realfeel + "°", W*0.12, H*0.38);
+    ctx.fillText("high " + WEATHER.hi + "° / low " + WEATHER.lo + "°", W*0.12, H*0.45);
+    // little sun/cloud pixel icon
+    rect(W*0.64, H*0.16, 36,26, "#cfd3e6");
+    rect(W*0.60, H*0.12, 22,18, "#eef1ff");
+    var blink = (Math.floor(t/2.8)%8===0);
+    var talking = (SPEAK.a || SPEAK.b) && (Math.floor(t*6)%2===0);
+    drawAnchor(W*0.3, H*0.95, P.suitNavy, P.suitNavyDark, P.hair, talking, blink && !(SPEAK.a||SPEAK.b));
+    drawMic(W*0.3-20, H*0.90, 0.9);
+  }
+
+  var SCENES = {
+    desk: renderDesk,
+    field: renderField,
+    weather: renderWeather
+  };
+
+  /* ===================== AUDIO ===================== */
+  var SPEAK = { a:false, b:false };     // real speaking state, drives mouth animation
+  var audioOn = false;
+  var audioCtx = null;
+  var synth = window.speechSynthesis || null;
+  var synthAvailable = !!(synth && window.SpeechSynthesisUtterance);
+  var voiceList = [];
+
+  function loadVoices(){
+    if (!synth) return;
+    voiceList = synth.getVoices() || [];
+  }
+  loadVoices();
+  if (synth && synth.addEventListener) synth.addEventListener("voiceschanged", loadVoices);
+
+  function pickVoice(preferFemale){
+    if (!voiceList.length) return null;
+    var englishVoices = voiceList.filter(function(v){ return /en/i.test(v.lang); });
+    var pool = englishVoices.length ? englishVoices : voiceList;
+    var genderHint = pool.filter(function(v){
+      var n = v.name.toLowerCase();
+      return preferFemale ? /female|samantha|victoria|zira|karen|fiona/.test(n)
+                           : /male|daniel|alex|fred|david|mark/.test(n);
+    });
+    if (genderHint.length) return genderHint[0];
+    // fall back to two different voices by index so they're at least distinct
+    return pool[preferFemale ? 0 : Math.min(1, pool.length-1)];
+  }
+
+  function ensureAudioCtx(){
+    if (!audioCtx){
+      try{ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch(e){ audioCtx = null; }
+    }
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+    return audioCtx;
+  }
+
+  function tone(ctxA, freq, startAt, dur, type, peakGain){
+    var osc = ctxA.createOscillator();
+    var gain = ctxA.createGain();
+    osc.type = type || "triangle";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.exponentialRampToValueAtTime(peakGain || 0.12, startAt + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + dur);
+    osc.connect(gain); gain.connect(ctxA.destination);
+    osc.start(startAt); osc.stop(startAt + dur + 0.02);
+  }
+
+  function sting(){
+    if (!audioOn) return;
+    var a = ensureAudioCtx(); if (!a) return;
+    var now = a.currentTime;
+    tone(a, 523.25, now,        0.11, "triangle", 0.10);
+    tone(a, 659.25, now + 0.11, 0.11, "triangle", 0.10);
+    tone(a, 784.00, now + 0.22, 0.16, "triangle", 0.11);
+  }
+
+  function blip(){
+    if (!audioOn) return;
+    var a = ensureAudioCtx(); if (!a) return;
+    tone(a, 880, a.currentTime, 0.055, "sine", 0.08);
+  }
+
+  function speak(text, voice, pitch, rate, onDone){
+    if (!synthAvailable || !audioOn){ onDone(); return; }
+    try{
+      var u = new SpeechSynthesisUtterance(text);
+      if (voice) u.voice = voice;
+      u.pitch = pitch; u.rate = rate;
+      var done = false;
+      function finish(){ if (done) return; done = true; onDone(); }
+      u.onend = finish;
+      u.onerror = finish;
+      // safety timeout in case the engine never fires an end event
+      setTimeout(finish, Math.max(4000, text.length * 90));
+      synth.speak(u);
+    }catch(e){ onDone(); }
+  }
+
+  var voiceA = pickVoice(false);
+  var voiceB = pickVoice(true);
+
+  /* ===================== PLAYBACK ===================== */
+  var idx = 0;
+  var segLen = 7000; // ms per headline, used only when audio is off
+  var pendingTimer = null;
+  var dotsEl = document.getElementById("dots");
+  var segLabelEl = document.getElementById("segLabel");
+  var ltKicker = document.getElementById("ltKicker");
+  var ltHeadline = document.getElementById("ltHeadline");
+  var ltSub = document.getElementById("ltSub");
+  var soundBtn = document.getElementById("soundBtn");
+  var startOverlay = document.getElementById("startOverlay");
+
+  var SEG_NAMES = { desk:"DESK", field:"FIELD REPORT", weather:"DATA BOARD" };
+
+  for (var i=0;i<HEADLINES.length;i++){
+    (function(i){
+      var b = document.createElement("button");
+      b.className = "dot"; b.setAttribute("aria-label", "Segment " + (i+1));
+      b.addEventListener("click", function(){ jumpTo(i); });
+      dotsEl.appendChild(b);
+    })(i);
+  }
+
+  function updateDots(){
+    var kids = dotsEl.children;
+    for (var i=0;i<kids.length;i++){
+      kids[i].setAttribute("aria-current", i===idx ? "true":"false");
+    }
+  }
+
+  function showHeadline(i){
+    idx = ((i % HEADLINES.length) + HEADLINES.length) % HEADLINES.length;
+    var h = HEADLINES[idx];
+    ltKicker.textContent = h.kicker;
+    ltHeadline.textContent = h.headline;
+    ltSub.textContent = h.sub;
+    segLabelEl.textContent = SEG_NAMES[h.scene];
+    currentScene = h.scene;
+    updateDots();
+    return h;
+  }
+
+  function stopPlayback(){
+    clearTimeout(pendingTimer);
+    SPEAK.a = false; SPEAK.b = false;
+    if (synth) synth.cancel();
+  }
+
+  // Drives one headline: either real two-voice dialogue, or a fixed
+  // caption timer when sound is off / unsupported.
+  function playCurrent(){
+    var h = showHeadline(idx);
+    sting();
+    if (audioOn && synthAvailable){
+      SPEAK.a = true;
+      speak(h.line1, voiceA, 0.95, 1.0, function(){
+        SPEAK.a = false;
+        blip();
+        SPEAK.b = true;
+        speak(h.reaction, voiceB, 1.25, 1.05, function(){
+          SPEAK.b = false;
+          pendingTimer = setTimeout(advance, 900);
+        });
+      });
+    } else {
+      pendingTimer = setTimeout(advance, segLen);
+    }
+  }
+
+  function advance(){
+    idx = (idx + 1) % HEADLINES.length;
+    playCurrent();
+  }
+
+  function jumpTo(i){
+    stopPlayback();
+    idx = i;
+    playCurrent();
+  }
+
+  function setAudioOn(on){
+    audioOn = on;
+    soundBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    soundBtn.textContent = on ? "🔊 SOUND" : "🔇 SOUND";
+    if (!on){ stopPlayback(); pendingTimer = setTimeout(advance, segLen); }
+  }
+
+  soundBtn.addEventListener("click", function(){
+    if (!audioOn){
+      ensureAudioCtx();
+      loadVoices();
+      voiceA = pickVoice(false);
+      voiceB = pickVoice(true);
+      setAudioOn(true);
+      stopPlayback();
+      playCurrent();
+    } else {
+      setAudioOn(false);
+    }
+  });
+
+  startOverlay.addEventListener("click", function(){
+    startOverlay.classList.add("hidden");
+    ensureAudioCtx();
+    loadVoices();
+    voiceA = pickVoice(false);
+    voiceB = pickVoice(true);
+    setAudioOn(true);
+    stopPlayback();
+    playCurrent();
+  });
+
+  if (!synthAvailable){
+    // No speech support in this browser/webview: hide the voice affordances,
+    // the newscast still runs on its caption timer.
+    startOverlay.querySelector("small").textContent = "voice unsupported here — tap to enable chime sounds";
+  }
+
+  var currentScene = HEADLINES[0].scene;
+  showHeadline(0);
+  pendingTimer = setTimeout(advance, segLen);
+
+  /* ===================== RENDER LOOP ===================== */
+  var startT = performance.now();
+  function frame(now){
+    var t = (now - startT) / 1000;
+    ctx.clearRect(0,0,W,H);
+    (SCENES[currentScene] || renderDesk)(t);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+})();
+</script>
