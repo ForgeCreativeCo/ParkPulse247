@@ -259,11 +259,19 @@
     color: var(--teal);
     padding-left:100%;
     padding-block: clamp(6px, 1vw, 12px);
-    animation: scroll-left 85s linear infinite;
+    animation: scroll-left 190s linear infinite;
   }
   .ticker-track span.open{ color: var(--teal); }
   .ticker-track span.closed{ color: var(--red); }
   .ticker-track span.wait-num{ color: var(--gold); font-weight:700; }
+  .ticker-track span.park-tag{
+    font-family: var(--f-display);
+    font-size: 0.7em;
+    color: var(--bg);
+    background: var(--teal);
+    padding: 3px 7px;
+    margin-right: 4px;
+  }
   @keyframes scroll-left{
     from{ transform: translateX(0); }
     to{ transform: translateX(-100%); }
@@ -391,21 +399,44 @@
     }
   ];
 
-  // Live snapshot pulled from queue-times.com for Magic Kingdom.
+  // Live snapshot pulled from queue-times.com — all four parks.
+  // Each group: [park label, [ [ride, minutes, isOpen], ... ] ]
   var WAITS = [
-    ["Seven Dwarfs Mine Train", 35, true],
-    ["TRON Lightcycle / Run", 35, true],
-    ["Buzz Lightyear's Space Ranger Spin", 35, true],
-    ["Peter Pan's Flight", 35, true],
-    ["Big Thunder Mountain Railroad", 20, true],
-    ["The Many Adventures of Winnie the Pooh", 20, true],
-    ["Jungle Cruise", 15, true],
-    ["Tiana's Bayou Adventure", 15, true],
-    ["Hall of Presidents", 15, true],
-    ["Space Mountain", 10, true],
-    ["Astro Orbiter", 10, true],
-    ["Haunted Mansion", 0, false],
-    ["Walt Disney World Railroad", 0, false]
+    ["MAGIC KINGDOM", [
+      ["Seven Dwarfs Mine Train", 35, true],
+      ["TRON Lightcycle / Run", 35, true],
+      ["Buzz Lightyear's Space Ranger Spin", 35, true],
+      ["Peter Pan's Flight", 35, true],
+      ["Big Thunder Mountain Railroad", 20, true],
+      ["Jungle Cruise", 15, true],
+      ["Space Mountain", 10, true],
+      ["Haunted Mansion", 0, false]
+    ]],
+    ["EPCOT", [
+      ["Guardians of the Galaxy: Cosmic Rewind", 105, true],
+      ["Test Track", 60, true],
+      ["Remy's Ratatouille Adventure", 55, true],
+      ["Frozen Ever After", 45, true],
+      ["Soarin' Around the World", 15, true],
+      ["Mission: SPACE", 15, true],
+      ["Meet Anna and Elsa", 0, false]
+    ]],
+    ["HOLLYWOOD STUDIOS", [
+      ["Indiana Jones Epic Stunt Spectacular", 0, true],
+      ["Beauty and the Beast – Live on Stage", 0, true],
+      ["Frozen Sing-Along Celebration", 0, true],
+      ["Star Wars: Rise of the Resistance", 0, false],
+      ["Slinky Dog Dash", 0, false],
+      ["Tower of Terror", 0, false]
+    ]],
+    ["ANIMAL KINGDOM", [
+      ["Festival of the Lion King", 0, true],
+      ["Feathered Friends in Flight", 0, true],
+      ["Finding Nemo: The Big Blue", 0, true],
+      ["Avatar Flight of Passage", 0, false],
+      ["Kilimanjaro Safaris", 0, false],
+      ["Expedition Everest", 0, false]
+    ]]
   ];
 
   var WEATHER = {
@@ -430,12 +461,19 @@
   var trackEl = document.getElementById("tickerTrack");
   function buildTicker(){
     var html = "";
-    for (var i=0;i<WAITS.length;i++){
-      var r = WAITS[i];
-      if (r[2]) {
-        html += '<span>' + r[0] + ' <span class="wait-num">' + r[1] + ' min</span></span>';
-      } else {
-        html += '<span>' + r[0] + ' <span class="closed">CLOSED</span></span>';
+    for (var p=0;p<WAITS.length;p++){
+      var parkName = WAITS[p][0];
+      var rides = WAITS[p][1];
+      html += '<span class="park-tag">' + parkName + '</span>';
+      for (var i=0;i<rides.length;i++){
+        var r = rides[i];
+        if (r[2] && r[1] > 0) {
+          html += '<span>' + r[0] + ' <span class="wait-num">' + r[1] + ' min</span></span>';
+        } else if (r[2]) {
+          html += '<span>' + r[0] + ' <span class="open">WALK ON</span></span>';
+        } else {
+          html += '<span>' + r[0] + ' <span class="closed">CLOSED</span></span>';
+        }
       }
     }
     html += '<span>WDW WEATHER &middot; <span class="open">' + WEATHER.temp + '&deg;F</span>, ' + WEATHER.sky + ' &middot; high ' + WEATHER.hi + '&deg;</span>';
